@@ -3,21 +3,44 @@ import re
 from rest_framework import serializers
 
 class DataSerializer(serializers.Serializer):
-    name = serializers.CharField()
-    message_template = serializers.CharField()
+    name = serializers.CharField(allow_null=False)
+    message_template = serializers.CharField(allow_null=False)
     type = serializers.CharField()
     scopes = serializers.ListField(child=serializers.DictField())
+    broker = serializers.DictField()
+    def validate_type(self, value):
+        """
+        Проверка, что поле Type содержит только "WhatsApp" или "email".
+        """
+        valid_types = ["WhatsApp", "email"]
+        if value not in valid_types:
+            raise serializers.ValidationError(f"Поле Type может принимать только значения: {', '.join(valid_types)}.")
+        return value
+
+    def validate_broker(self,value):
+        self.validate_constants(value, ['id',],'broker.')
+
 
     def validate(self, attrs):
+        required_fields = [
+            'retail',
+            'retail.personid',
+            'estate',
+            'estate.id',]
         message_template = attrs['message_template']
         pattern = r'\[([^\]]+)\]'
         variable_list = re.findall(pattern, message_template)
         variable_dict = self.process_data(variable_list)
+        type = attrs['type']
         for scope in attrs['scopes']:
+            self.validate_constants(scope,required_fields,'scopes.')
+            #проверка contacts
+            if attrs['type'] == 'phone':
+                self.validate_constants(scope, ['retail.contact.phone'],'scopes.')
+            elif attrs['type'] == 'WhatsApp':
+                self.validate_constants(scope, ['retail.contact.WhatsApp'], 'scopes.')
             if (result := self.find_key_difference(variable_dict, scope)) and result is not None:
                 raise serializers.ValidationError([f"Scope: {scope}",f"Error: Отсутствуют ключи {','.join(result)}"])
-
-        self.check_empty_values(attrs)
         return attrs
 
     def find_key_difference(self,dict1, dict2):
@@ -43,23 +66,37 @@ class DataSerializer(serializers.Serializer):
                     current_dict = current_dict.setdefault(key, {})
         return variable_dict
 
-    def check_empty_values(self, attrs):
-        for key, value in attrs.items():
-            if isinstance(value, str) and not value.strip():
-                raise serializers.ValidationError(
-                    f"Значение для поля '{key}' не может быть пустым или состоять только из пробелов.")
-            elif isinstance(value, list):
-                for item in value:
-                    self.check_empty_values(item)
-            elif isinstance(value, dict):
-                self.check_empty_values(value)
 
-    def validate_type(self, value):
-        """
-        Проверка, что поле Type содержит только "WhatsApp" или "email".
-        """
-        valid_types = ["WhatsApp", "email"]
-        if value not in valid_types:
-            raise serializers.ValidationError(f"Поле Type может принимать только значения: {', '.join(valid_types)}.")
-        return value
+    def validate_constants(self, data, required_fields, error_pre_field):
+
+        for field in required_fields:
+            if not self.is_field_present(data, field):
+                error_message = f"Поле {error_pre_field}{field} должно быть представлено."
+                raise serializers.ValidationError(error_message)
+
+            if self.is_field_null(data, field):
+                error_message = f"Поле {error_pre_field}{field} не может быть нулевым."
+                raise serializers.ValidationError(error_message)
+
+    def is_field_present(self, data, field_path):
+        #вспомогательный метод
+        fields = field_path.split('.')
+        current_data = data
+        for field in fields:
+            if field not in current_data:
+                return False
+            current_data = current_data[field]
+        return True
+
+    def is_field_null(self, data, field_path):
+        fields = field_path.split('.')
+        current_data = data
+        for field in fields:
+            if field not in current_data:
+                return False
+            current_data = current_data[field]
+            if current_data == "":
+                return True
+        return current_data is None
+
 
