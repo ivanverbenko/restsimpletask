@@ -18,8 +18,9 @@ class DataSerializer(serializers.Serializer):
         return value
 
     def validate_broker(self,value):
-        self.validate_constants(value, ['id',],'broker.')
-
+        self.validate_constants(value, ['id',],'broker.', \
+                                        validation_functions=[self.is_field_null])
+        return value
 
     def validate(self, attrs):
         required_fields = [
@@ -27,18 +28,26 @@ class DataSerializer(serializers.Serializer):
             'retail.personid',
             'estate',
             'estate.id',]
+        integer_fields = [
+            'estate.id',
+            'retail.personid'
+        ]
         message_template = attrs['message_template']
         pattern = r'\[([^\]]+)\]'
         variable_list = re.findall(pattern, message_template)
         variable_dict = self.process_data(variable_list)
-        type = attrs['type']
         for scope in attrs['scopes']:
-            self.validate_constants(scope,required_fields,'scopes.')
+            self.validate_constants(scope,required_fields,'scopes.',\
+                                        validation_functions=[self.is_field_null])
+            self.validate_constants(scope, integer_fields, 'scopes.', \
+                                    validation_functions=[self.is_field_integer])
             #проверка contacts
-            if attrs['type'] == 'phone':
-                self.validate_constants(scope, ['retail.contact.phone'],'scopes.')
+            if attrs['type'] == 'email':
+                self.validate_constants(scope, ['retail.contact.email'],'scopes.', \
+                                        validation_functions=[self.is_field_null])
             elif attrs['type'] == 'WhatsApp':
-                self.validate_constants(scope, ['retail.contact.WhatsApp'], 'scopes.')
+                self.validate_constants(scope, ['retail.contact.phone'], 'scopes.',\
+                                        validation_functions=[self.is_field_null])
             if (result := self.find_key_difference(variable_dict, scope)) and result is not None:
                 raise serializers.ValidationError([f"Scope: {scope}",f"Error: Отсутствуют ключи {','.join(result)}"])
         return attrs
@@ -66,20 +75,20 @@ class DataSerializer(serializers.Serializer):
                     current_dict = current_dict.setdefault(key, {})
         return variable_dict
 
-
-    def validate_constants(self, data, required_fields, error_pre_field):
-
+    def validate_constants(self, data, required_fields, error_pre_field, validation_functions):
+        """В этот метод передаем список функций валидации и поля"""
         for field in required_fields:
             if not self.is_field_present(data, field):
                 error_message = f"Поле {error_pre_field}{field} должно быть представлено."
                 raise serializers.ValidationError(error_message)
 
-            if self.is_field_null(data, field):
-                error_message = f"Поле {error_pre_field}{field} не может быть нулевым."
-                raise serializers.ValidationError(error_message)
+            for validation_function in validation_functions:
+                if validation_function(data, field):
+                    error_message = f"Поле {error_pre_field}{field} не прошло валидацию: {self.__val_type}."
+                    raise serializers.ValidationError(error_message)
 
     def is_field_present(self, data, field_path):
-        #вспомогательный метод
+
         fields = field_path.split('.')
         current_data = data
         for field in fields:
@@ -89,6 +98,7 @@ class DataSerializer(serializers.Serializer):
         return True
 
     def is_field_null(self, data, field_path):
+        self.__val_type = "Пустое"
         fields = field_path.split('.')
         current_data = data
         for field in fields:
@@ -98,5 +108,32 @@ class DataSerializer(serializers.Serializer):
             if current_data == "":
                 return True
         return current_data is None
+
+    def is_field_integer(self, data, field_path):
+        fields = field_path.split('.')
+        current_data = data
+        for field in fields:
+            if field not in current_data:
+                return False
+            current_data = current_data[field]
+
+        # Проверяем, является ли значение целым числом
+        if isinstance(current_data, int):
+            return True
+
+        # Если значение является словарем, рекурсивно проверяем его значения
+        if isinstance(current_data, dict):
+            for value in current_data.values():
+                if self.is_field_integer(value, field_path):
+                    return True
+
+        # Если значение является списком, рекурсивно проверяем его элементы
+        if isinstance(current_data, list):
+            for item in current_data:
+                if self.is_field_integer(item, field_path):
+                    return True
+
+        return False
+
 
 
