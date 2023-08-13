@@ -8,4 +8,6 @@ class Dispatch(models.Model):
     estate_id = models.CharField(max_length=255)
     broker_id = models.CharField(max_length=255)
     type = models.CharField(max_length=20)
-    contact = models.CharField(max_length=255)
+    phone = models.CharField(max_length=20, default=None, null=True)
+    email = models.EmailField(default=None,null=True)
+    sent = models.BooleanField(default=False)

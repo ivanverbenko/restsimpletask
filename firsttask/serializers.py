@@ -19,7 +19,7 @@ class DataSerializer(serializers.Serializer):
 
     def validate_broker(self,value):
         self.validate_constants(value, ['id',],'broker.', \
-                                        validation_functions=[self.is_field_null])
+                                        validation_functions=[self.is_field_null, self.is_field_integer])
         return value
 
     def validate(self, attrs):
@@ -30,7 +30,8 @@ class DataSerializer(serializers.Serializer):
             'estate.id',]
         integer_fields = [
             'estate.id',
-            'retail.personid'
+            'retail.personid',
+            'retail.contact.phone'
         ]
         message_template = attrs['message_template']
         pattern = r'\[([^\]]+)\]'
@@ -110,30 +111,15 @@ class DataSerializer(serializers.Serializer):
         return current_data is None
 
     def is_field_integer(self, data, field_path):
+        self.__val_type = 'Не число'
         fields = field_path.split('.')
         current_data = data
         for field in fields:
             if field not in current_data:
-                return False
+                return True
             current_data = current_data[field]
 
-        # Проверяем, является ли значение целым числом
-        if isinstance(current_data, int):
-            return True
-
-        # Если значение является словарем, рекурсивно проверяем его значения
-        if isinstance(current_data, dict):
-            for value in current_data.values():
-                if self.is_field_integer(value, field_path):
-                    return True
-
-        # Если значение является списком, рекурсивно проверяем его элементы
-        if isinstance(current_data, list):
-            for item in current_data:
-                if self.is_field_integer(item, field_path):
-                    return True
-
-        return False
+        return not(isinstance(current_data, int))
 
 
 

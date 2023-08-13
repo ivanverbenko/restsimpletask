@@ -1,5 +1,6 @@
 from string import Template
 
+from django.db.models import Q
 from jinja2 import Template
 from rest_framework import status
 from rest_framework.response import Response
@@ -17,19 +18,43 @@ class ScheduleCreateView(APIView):
             message_template = serializer.validated_data['message_template'].replace('[', '{{').replace(']', '}}')
             scopes = serializer.validated_data['scopes']
             dispatches_to_create = []
+            sent_messages = []  # To track sent messages
+
             for scope in scopes:
-                template = Template(message_template)
-                formatted_message = template.render(**scope)
                 type = serializer.validated_data['type']
                 contact = scope['retail']['contact']['email'] if type == "email" \
                     else scope['retail']['contact']['phone']
-                dispatches_to_create.append(Dispatch(name=name, message=formatted_message, \
-                                                     retail_id=scope['retail']['personid'], \
-                                                     broker_id=serializer.validated_data['broker']['id'], \
-                                                     estate_id=scope['estate']['id'], \
-                                                     type=type,
-                                                     contact=contact))
-            Dispatch.objects.bulk_create(dispatches_to_create)
-            return Response("Data saved successfully", status=status.HTTP_201_CREATED)
+
+                # Check if the same estate.id and contact have been sent before
+                filter_query = Q(estate_id=scope['estate']['id']) & (Q(email=contact) | Q(phone=contact))
+                existing_sent_message = Dispatch.objects.filter(filter_query).first()
+
+                if existing_sent_message:
+                    error_message = f"Ошибка {type}: {scope['estate']['id']}"
+                    sent_messages.append({
+                        'scope': scope,
+                        'error_message': error_message,
+                        'entityId': existing_sent_message.id
+                    })
+                else:
+                    template = Template(message_template)
+                    formatted_message = template.render(**scope)
+                    dispatch = Dispatch(
+                        name=name,
+                        message=formatted_message,
+                        retail_id=scope['retail']['personid'],
+                        broker_id=serializer.validated_data['broker']['id'],
+                        estate_id=scope['estate']['id'],
+                        type=type,
+                        email=contact if type == "email" else None,
+                        phone=contact if type == "WhatsApp" else None
+                    )
+                    dispatches_to_create.append(dispatch)
+
+            if sent_messages:
+                return Response(sent_messages, status=status.HTTP_400_BAD_REQUEST)
+            else:
+                Dispatch.objects.bulk_create(dispatches_to_create)
+                return Response("Data saved successfully", status=status.HTTP_201_CREATED)
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
