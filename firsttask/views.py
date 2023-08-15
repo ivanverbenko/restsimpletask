@@ -13,13 +13,13 @@ from firsttask.serializers import DataSerializer
 class ScheduleCreateView(APIView):
     def post(self, request):
         serializer = DataSerializer(data=request.data)
+        print(serializer.is_valid())
         if serializer.is_valid():
             name = serializer.validated_data['name']
             message_template = serializer.validated_data['message_template'].replace('[', '{{').replace(']', '}}')
             scopes = serializer.validated_data['scopes']
             dispatches_to_create = []
             sent_messages = []  # To track sent messages
-
             for scope in scopes:
                 type = serializer.validated_data['type']
                 contact = scope['retail']['contact']['email'] if type == "email" \
@@ -50,6 +50,7 @@ class ScheduleCreateView(APIView):
                         phone=contact if type == "WhatsApp" else None
                     )
                     dispatches_to_create.append(dispatch)
+                    print(dispatches_to_create)
 
             if sent_messages:
                 return Response(sent_messages, status=status.HTTP_400_BAD_REQUEST)
