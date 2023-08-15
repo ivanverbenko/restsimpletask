@@ -55,6 +55,6 @@ class ScheduleCreateView(APIView):
                 return Response(sent_messages, status=status.HTTP_400_BAD_REQUEST)
             else:
                 Dispatch.objects.bulk_create(dispatches_to_create)
-                return Response("Data saved successfully", status=status.HTTP_201_CREATED)
+                return Response(serializer.validated_data['scopes_erros'], status=status.HTTP_201_CREATED)
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

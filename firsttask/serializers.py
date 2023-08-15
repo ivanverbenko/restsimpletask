@@ -8,6 +8,11 @@ class DataSerializer(serializers.Serializer):
     type = serializers.CharField()
     scopes = serializers.ListField(child=serializers.DictField())
     broker = serializers.DictField()
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.validation_errors = []
+
     def validate_type(self, value):
         """
         Проверка, что поле Type содержит только "WhatsApp" или "email".
@@ -20,9 +25,16 @@ class DataSerializer(serializers.Serializer):
     def validate_broker(self,value):
         self.validate_constants(value, ['id',],'broker.', \
                                         validation_functions=[self.is_field_null, self.is_field_integer])
+        self.validate_constants(value, ['id', ], 'broker.', \
+                                validation_functions=[self.is_field_null, self.is_field_integer])
         return value
 
     def validate(self, attrs):
+        failed_scopes = []
+        successful_scopes = []
+
+        if self.validation_errors:
+            raise MissingValidationError(self.validation_errors)
         required_fields = [
             'retail',
             'retail.personid',
@@ -31,7 +43,6 @@ class DataSerializer(serializers.Serializer):
         integer_fields = [
             'estate.id',
             'retail.personid',
-            'retail.contact.phone'
         ]
         message_template = attrs['message_template']
         pattern = r'\[([^\]]+)\]'
@@ -40,8 +51,16 @@ class DataSerializer(serializers.Serializer):
         for scope in attrs['scopes']:
             self.validate_constants(scope,required_fields,'scopes.',\
                                         validation_functions=[self.is_field_null])
+            if self.validation_errors:
+                failed_scopes.append({"scope": scope, "errors": self.validation_errors})
+                self.validation_errors = []  # Сбрасываем список ошибок для следующего скопа
+                continue
             self.validate_constants(scope, integer_fields, 'scopes.', \
                                     validation_functions=[self.is_field_integer])
+            if self.validation_errors:
+                failed_scopes.append({"scope": scope, "errors": self.validation_errors})
+                self.validation_errors = []
+                continue
             #проверка contacts
             if attrs['type'] == 'email':
                 self.validate_constants(scope, ['retail.contact.email'],'scopes.', \
@@ -49,8 +68,16 @@ class DataSerializer(serializers.Serializer):
             elif attrs['type'] == 'WhatsApp':
                 self.validate_constants(scope, ['retail.contact.phone'], 'scopes.',\
                                         validation_functions=[self.is_field_null])
+            if self.validation_errors:
+                failed_scopes.append({"scope": scope, "errors": self.validation_errors})
+                self.validation_errors = []
+                continue
             if (result := self.find_key_difference(variable_dict, scope)) and result is not None:
-                raise serializers.ValidationError([f"Scope: {scope}",f"Error: Отсутствуют ключи {','.join(result)}"])
+                raise serializers.ValidationError([f"Scope: {scope}",f"Error: Отсутствуют ключи {','.join(result)}"])##переделать
+            successful_scopes.append(scope)
+        attrs['scopes'] = successful_scopes
+        attrs['scopes_erros'] = failed_scopes
+        print(attrs)
         return attrs
 
     def find_key_difference(self,dict1, dict2):
@@ -79,17 +106,18 @@ class DataSerializer(serializers.Serializer):
     def validate_constants(self, data, required_fields, error_pre_field, validation_functions):
         """В этот метод передаем список функций валидации и поля"""
         for field in required_fields:
-            if not self.is_field_present(data, field):
-                error_message = f"Поле {error_pre_field}{field} должно быть представлено."
-                raise serializers.ValidationError(error_message)
-
             for validation_function in validation_functions:
                 if validation_function(data, field):
-                    error_message = f"Поле {error_pre_field}{field} не прошло валидацию: {self.__val_type}."
-                    raise serializers.ValidationError(error_message)
+                    missing_field = f"{error_pre_field}{field}"
+                    missing_error = {
+                        "error": validation_function.__doc__,
+                        "field": missing_field,
+                        "description": f"Поле {missing_field} не прошло валидацию: {self.__val_type}."
+                    }
+                    self.validation_errors.append(missing_error)
 
     def is_field_present(self, data, field_path):
-
+        """field not present"""
         fields = field_path.split('.')
         current_data = data
         for field in fields:
@@ -99,6 +127,7 @@ class DataSerializer(serializers.Serializer):
         return True
 
     def is_field_null(self, data, field_path):
+        """field is null"""
         self.__val_type = "Пустое"
         fields = field_path.split('.')
         current_data = data
@@ -111,7 +140,8 @@ class DataSerializer(serializers.Serializer):
         return current_data is None
 
     def is_field_integer(self, data, field_path):
-        self.__val_type = 'Не число'
+        """field not integer"""
+        self.__val_type = 'должно быть числом'
         fields = field_path.split('.')
         current_data = data
         for field in fields:
@@ -120,6 +150,21 @@ class DataSerializer(serializers.Serializer):
             current_data = current_data[field]
 
         return not(isinstance(current_data, int))
+
+class MissingValidationError(serializers.ValidationError):
+    """передаем список ошибок"""
+    def __init__(self, error_list):
+        formatted_errors = []
+        for error in error_list:
+            formatted_error = {
+                "field": error["field"],
+                "description": error["description"],
+                "error": error["error"]
+            }
+            if "scopes" in error:
+                formatted_error["scopes"] = error["scopes"]
+            formatted_errors.append(formatted_error)
+        super().__init__(detail={"errors": formatted_errors})
 
 
 
