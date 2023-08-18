@@ -17,9 +17,11 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path
 
+from async_app.views import AsyncDataSendView
 from firsttask.views import ScheduleCreateView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/v1', ScheduleCreateView.as_view(), name='update-and-save'),
+    path('api/v2', AsyncDataSendView.as_view(), name='async-data-send'),
 ]

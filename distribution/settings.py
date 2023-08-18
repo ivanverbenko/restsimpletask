@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'firsttask',
+    'async_app',
 ]
 
 MIDDLEWARE = [
@@ -75,13 +76,6 @@ WSGI_APPLICATION = 'distribution.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
-
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
-}
 
 
 # Password validation
@@ -124,3 +118,16 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+#Async
+
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',  # Используем бэкенд для PostgreSQL
+        'NAME': 'dis',  # Имя базы данных
+        'USER': 'postgres',  # Имя пользователя
+        'PASSWORD': '1234',  # Пароль пользователя
+        'HOST': 'localhost',  # Хост базы данных (обычно localhost)
+        'PORT': '5432',  # Порт базы данных (обычно 5432)
+    }
+}

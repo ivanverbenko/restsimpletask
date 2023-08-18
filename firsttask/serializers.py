@@ -52,32 +52,46 @@ class DataSerializer(serializers.Serializer):
             self.validate_constants(scope,required_fields,'scopes.',\
                                         validation_functions=[self.is_field_null])
             if self.validation_errors:
-                failed_scopes.append({"scope": scope, "errors": self.validation_errors})
+                scope['errors'] = self.validation_errors
+                failed_scopes.append(scope)
                 self.validation_errors = []  # Сбрасываем список ошибок для следующего скопа
                 continue
             self.validate_constants(scope, integer_fields, 'scopes.', \
                                     validation_functions=[self.is_field_integer])
             if self.validation_errors:
-                failed_scopes.append({"scope": scope, "errors": self.validation_errors})
+                #scope["errors"]: self.validation_errors}
+                scope['errors'] = self.validation_errors
+                failed_scopes.append(scope)
                 self.validation_errors = []
                 continue
             #проверка contacts
-            if attrs['type'] == 'email':
+
+            if attrs['type'] == "email":
                 self.validate_constants(scope, ['retail.contact.email'],'scopes.', \
-                                        validation_functions=[self.is_field_null])
+                                        validation_functions=[self.is_field_present,self.is_field_null])
+
             elif attrs['type'] == 'WhatsApp':
                 self.validate_constants(scope, ['retail.contact.phone'], 'scopes.',\
                                         validation_functions=[self.is_field_null])
+
+            if (result := self.find_key_difference(variable_dict, scope)) and result is not None:
+                for field in result:
+                    missing_error = {
+                        "error": "Field shoud be present",
+                        "field": field,
+                        "description": f"Поле {field} не прошло валидацию: не представлено."
+                    }
+                    self.validation_errors.append(missing_error)
             if self.validation_errors:
-                failed_scopes.append({"scope": scope, "errors": self.validation_errors})
+                scope['errors'] = self.validation_errors
+                failed_scopes.append(scope)
                 self.validation_errors = []
                 continue
-            if (result := self.find_key_difference(variable_dict, scope)) and result is not None:
-                raise serializers.ValidationError([f"Scope: {scope}",f"Error: Отсутствуют ключи {','.join(result)}"])##переделать
+            ##переделать
+            scope['errors']=""
             successful_scopes.append(scope)
         attrs['scopes'] = successful_scopes
         attrs['scopes_erros'] = failed_scopes
-        print(attrs)
         return attrs
 
     def find_key_difference(self,dict1, dict2):
@@ -118,13 +132,14 @@ class DataSerializer(serializers.Serializer):
 
     def is_field_present(self, data, field_path):
         """field not present"""
+        self.__val_type = "не представлено"
         fields = field_path.split('.')
         current_data = data
         for field in fields:
             if field not in current_data:
-                return False
+                return True
             current_data = current_data[field]
-        return True
+        return False
 
     def is_field_null(self, data, field_path):
         """field is null"""
