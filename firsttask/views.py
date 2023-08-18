@@ -20,6 +20,8 @@ class ScheduleCreateView(APIView):
             scopes = serializer.validated_data['scopes']
             dispatches_to_create = []
             sent_messages = []  # To track sent messages
+            sucsessfull_scopes = []
+            failed_scopes = []
             for scope in scopes:
                 type = serializer.validated_data['type']
                 contact = scope['retail']['contact']['email'] if type == "email" \
@@ -31,31 +33,30 @@ class ScheduleCreateView(APIView):
 
                 if existing_sent_message:
                     error_message = f"Ошибка {type}: {scope['estate']['id']}"
-                    sent_messages.append({
+                    failed_scopes.append({
                         'scope': scope,
-                        'error_message': error_message,
+                        'errors': error_message,
                         'entityId': existing_sent_message.id
                     })
                 else:
                     template = Template(message_template)
                     formatted_message = template.render(**scope)
-                    dispatch = Dispatch(
-                        name=name,
-                        message=formatted_message,
-                        retail_id=scope['retail']['personid'],
-                        broker_id=serializer.validated_data['broker']['id'],
-                        estate_id=scope['estate']['id'],
-                        type=type,
-                        email=contact if type == "email" else None,
-                        phone=contact if type == "WhatsApp" else None
-                    )
-                    dispatches_to_create.append(dispatch)
-                    print(dispatches_to_create)
-
-            if sent_messages:
-                return Response(sent_messages, status=status.HTTP_400_BAD_REQUEST)
-            else:
-                Dispatch.objects.bulk_create(dispatches_to_create)
-                return Response(serializer.validated_data['scopes_erros'], status=status.HTTP_201_CREATED)
+                    print(scope)
+                    dispatch_dict = {
+                        'name': name,
+                        'message': formatted_message,
+                        'retail_id': scope['retail']['personid'],
+                        'broker_id': serializer.validated_data['broker']['id'],
+                        'estate_id': scope['estate']['id'],
+                        'type': type,
+                        'email': contact if type == "email" else None,
+                        'phone': contact if type == "WhatsApp" else None
+                    }
+                    dispatches_to_create.append(dispatch_dict)
+                    sucsessfull_scopes.append(scope)
+            dispatch_objects_to_create = [Dispatch(**dispatch_dict) for dispatch_dict in dispatches_to_create]
+            Dispatch.objects.bulk_create(dispatch_objects_to_create)
+            return Response({"result":{"scopes":sucsessfull_scopes+failed_scopes+serializer.validated_data['scopes_erros']}}\
+                            , status=status.HTTP_201_CREATED)
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
