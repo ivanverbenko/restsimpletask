@@ -1,6 +1,11 @@
 import re
 
+from django.db.models import Q
+from jinja2 import Template
 from rest_framework import serializers
+
+from firsttask.models import Dispatch
+
 
 class DataSerializer(serializers.Serializer):
     name = serializers.CharField(allow_null=False)
@@ -166,6 +171,54 @@ class DataSerializer(serializers.Serializer):
 
         return not(isinstance(current_data, int))
 
+    def create(self, validated_data):
+        name = validated_data['name']
+        message_template = validated_data['message_template'].replace('[', '{{').replace(']', '}}')
+        scopes = validated_data['scopes']
+        dispatches_to_create = []
+        sent_messages = []  # To track sent messages
+        sucsessfull_scopes = []
+        failed_scopes = []
+        for scope in scopes:
+            type = validated_data['type']
+            contact = scope['retail']['contact']['email'] if type == "email" \
+                else scope['retail']['contact']['phone']
+
+            # Check if the same estate.id and contact have been sent before
+            filter_query = Q(estate_id=scope['estate']['id']) & (Q(email=contact) | Q(phone=contact))
+            existing_sent_message = Dispatch.objects.filter(filter_query).first()
+
+            if existing_sent_message:
+                error_message = f"{type} уже был в рассылке estate: {scope['estate']['id']}"
+                scope['errors']=[{
+                    'error': error_message,
+                    'field': type,
+                    'entityId': existing_sent_message.id
+                }]
+                failed_scopes.append({
+                    'scope': scope,
+                    'errors': error_message,
+                    'entityId': existing_sent_message.id
+                })
+            else:
+                template = Template(message_template)
+                formatted_message = template.render(**scope)
+                print(scope)
+                dispatch_dict = {
+                    'name': name,
+                    'message': formatted_message,
+                    'retail_id': scope['retail']['personid'],
+                    'broker_id': validated_data['broker']['id'],
+                    'estate_id': scope['estate']['id'],
+                    'type': type,
+                    'email': contact if type == "email" else None,
+                    'phone': contact if type == "WhatsApp" else None
+                }
+                dispatches_to_create.append(dispatch_dict)
+                sucsessfull_scopes.append(scope)
+        dispatch_objects_to_create = [Dispatch(**dispatch_dict) for dispatch_dict in dispatches_to_create]
+        Dispatch.objects.bulk_create(dispatch_objects_to_create)
+        return  dispatch_objects_to_create, sucsessfull_scopes, failed_scopes
 class MissingValidationError(serializers.ValidationError):
     """передаем список ошибок"""
     def __init__(self, error_list):
