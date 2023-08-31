@@ -13,15 +13,13 @@ from firsttask.serializers import DataSerializer
 class ScheduleCreateView(APIView):
     def post(self, request):
         serializer = DataSerializer(data=request.data)
-        print(serializer.is_valid())
         if serializer.is_valid():
             dispatch_serializer = DataSerializer(data=serializer.validated_data)
             if dispatch_serializer.is_valid():
-                created_dispatches, sucsessfull_scopes, failed_scopes = dispatch_serializer.save()
-
+                failed_scopes, sucsessful_scopes = dispatch_serializer.save()
                 return Response({
                     "result": {
-                        "scopes": sucsessfull_scopes + failed_scopes + serializer.validated_data['scopes_erros']
+                        "scopes": sucsessful_scopes + serializer.validated_data['scopes_erros'] + failed_scopes
                     }
                 }, status=status.HTTP_201_CREATED)
             else:

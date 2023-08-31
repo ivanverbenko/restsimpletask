@@ -4,6 +4,7 @@ from django.db.models import Q
 from jinja2 import Template
 from rest_framework import serializers
 
+from firsttask.constanValidator import ConstantValidator
 from firsttask.models import Dispatch
 
 
@@ -18,6 +19,7 @@ class DataSerializer(serializers.Serializer):
         super().__init__(*args, **kwargs)
         self.validation_errors = []
 
+
     def validate_type(self, value):
         """
         Проверка, что поле Type содержит только "WhatsApp" или "email".
@@ -28,10 +30,14 @@ class DataSerializer(serializers.Serializer):
         return value
 
     def validate_broker(self,value):
-        self.validate_constants(value, ['id',],'broker.', \
-                                        validation_functions=[self.is_field_null, self.is_field_integer])
-        self.validate_constants(value, ['id', ], 'broker.', \
-                                validation_functions=[self.is_field_null, self.is_field_integer])
+        constant_validator = ConstantValidator()
+        required_fields = ['id']
+        error_pre_field = 'broker.'
+        validation_functions = [constant_validator.is_field_null, constant_validator.is_field_integer]
+
+        errors = constant_validator.validate_constants(value, required_fields, error_pre_field, validation_functions)
+        if errors:
+            raise serializers.ValidationError(errors)
         return value
 
     def validate(self, attrs):
@@ -52,124 +58,79 @@ class DataSerializer(serializers.Serializer):
         message_template = attrs['message_template']
         pattern = r'\[([^\]]+)\]'
         variable_list = re.findall(pattern, message_template)
-        variable_dict = self.process_data(variable_list)
+        constant_validator = ConstantValidator()
         for scope in attrs['scopes']:
-            self.validate_constants(scope,required_fields,'scopes.',\
-                                        validation_functions=[self.is_field_null])
-            if self.validation_errors:
-                scope['errors'] = self.validation_errors
+            all_errors = []
+            scope['errors'] = ""
+            errors = constant_validator.validate_constants(scope, required_fields, 'scopes.',
+                                                           validation_functions=[constant_validator.is_field_null])
+            if errors:
+                scope['errors'] = errors
                 failed_scopes.append(scope)
-                self.validation_errors = []  # Сбрасываем список ошибок для следующего скопа
                 continue
-            self.validate_constants(scope, integer_fields, 'scopes.', \
-                                    validation_functions=[self.is_field_integer])
-            if self.validation_errors:
-                #scope["errors"]: self.validation_errors}
-                scope['errors'] = self.validation_errors
-                failed_scopes.append(scope)
-                self.validation_errors = []
-                continue
+            errors = constant_validator.validate_constants(scope, integer_fields, 'scopes.',
+                                                           validation_functions=[constant_validator.is_field_integer])
+            if errors:
+                all_errors.append(errors)
+            # if errors:
+            #     #scope["errors"]: self.validation_errors}
+            #     scope['errors'] = errors
+            #     failed_scopes.append(scope)
+            #     errors = []
+            #     continue
             #проверка contacts
 
             if attrs['type'] == "email":
-                self.validate_constants(scope, ['retail.contact.email'],'scopes.', \
-                                        validation_functions=[self.is_field_present,self.is_field_null])
+                errors=[]
+                errors = constant_validator.validate_constants(scope, ['retail.contact.email'],'scopes.', \
+                                        validation_functions=[constant_validator.is_field_present,constant_validator.is_field_null])
+                # if errors:
+                #     scope['errors'] = errors
+                #     failed_scopes.append(scope)
+                #     continue
+                if errors:
+                    all_errors.append(errors)
+
 
             elif attrs['type'] == 'WhatsApp':
-                self.validate_constants(scope, ['retail.contact.phone'], 'scopes.',\
-                                        validation_functions=[self.is_field_null])
-
-            if (result := self.find_key_difference(variable_dict, scope)) and result is not None:
-                for field in result:
-                    missing_error = {
-                        "error": "Field shoud be present",
-                        "field": field,
-                        "description": f"Поле {field} не прошло валидацию: не представлено."
-                    }
-                    self.validation_errors.append(missing_error)
-            if self.validation_errors:
-                scope['errors'] = self.validation_errors
+                errors = constant_validator.validate_constants(scope, ['retail.contact.phone'], 'scopes.', \
+                                                               validation_functions=[
+                                                                   constant_validator.is_field_present,
+                                                                   constant_validator.is_field_null])
+                # if errors:
+                #     scope['errors'] = errors
+                #     failed_scopes.append(scope)
+                #     continue
+                if errors:
+                    all_errors.append(errors)
+            missing_fields_from_msg = self.get_missing_fields_from_templates(message_template,scope)
+            # if missing_fields_from_msg:
+            #     scope['errors'] = missing_fields_from_msg
+            #     failed_scopes.append(scope)
+            #     continue
+            if missing_fields_from_msg:
+                all_errors.append(missing_fields_from_msg)
+            if all_errors:
+                scope['errors'] = all_errors
                 failed_scopes.append(scope)
-                self.validation_errors = []
                 continue
-            ##переделать
-            scope['errors']=""
             successful_scopes.append(scope)
         attrs['scopes'] = successful_scopes
         attrs['scopes_erros'] = failed_scopes
         return attrs
 
-    def find_key_difference(self,dict1, dict2):
-        missing_keys = set()
-        for key in dict1.keys():
-            if key not in dict2:
-                missing_keys.add(key)
-            elif isinstance(dict1[key], dict) and isinstance(dict2[key], dict):
-                nested_missing_keys = self.find_key_difference(dict1[key], dict2[key])
-                missing_keys.update({f"{key}.{nested_key}" for nested_key in nested_missing_keys})
+    def get_missing_fields_from_templates(self, message,scope):
+        pattern = r'\[([^\[\]]+)\]'
+        matches = re.findall(pattern, message)
+        constant_validator = ConstantValidator()
+        value = scope
+        error_pre_field = 'scopes.'
+        required_fields = matches
+        validation_functions = [constant_validator.is_field_present]
+        errors = constant_validator.validate_constants(value, required_fields, error_pre_field,
+                                                       validation_functions)
+        return errors
 
-        return missing_keys
-
-    def process_data(self,variable_list):
-        variable_dict = {}
-        for variable in variable_list:
-            keys = variable.split('.')
-            current_dict = variable_dict
-            for i, key in enumerate(keys):
-                if i == len(keys) - 1:
-                    current_dict[key] = True
-                else:
-                    current_dict = current_dict.setdefault(key, {})
-        return variable_dict
-
-    def validate_constants(self, data, required_fields, error_pre_field, validation_functions):
-        """В этот метод передаем список функций валидации и поля"""
-        for field in required_fields:
-            for validation_function in validation_functions:
-                if validation_function(data, field):
-                    missing_field = f"{error_pre_field}{field}"
-                    missing_error = {
-                        "error": validation_function.__doc__,
-                        "field": missing_field,
-                        "description": f"Поле {missing_field} не прошло валидацию: {self.__val_type}."
-                    }
-                    self.validation_errors.append(missing_error)
-
-    def is_field_present(self, data, field_path):
-        """field not present"""
-        self.__val_type = "не представлено"
-        fields = field_path.split('.')
-        current_data = data
-        for field in fields:
-            if field not in current_data:
-                return True
-            current_data = current_data[field]
-        return False
-
-    def is_field_null(self, data, field_path):
-        """field is null"""
-        self.__val_type = "Пустое"
-        fields = field_path.split('.')
-        current_data = data
-        for field in fields:
-            if field not in current_data:
-                return False
-            current_data = current_data[field]
-            if current_data == "":
-                return True
-        return current_data is None
-
-    def is_field_integer(self, data, field_path):
-        """field not integer"""
-        self.__val_type = 'должно быть числом'
-        fields = field_path.split('.')
-        current_data = data
-        for field in fields:
-            if field not in current_data:
-                return True
-            current_data = current_data[field]
-
-        return not(isinstance(current_data, int))
 
     def create(self, validated_data):
         name = validated_data['name']
@@ -190,11 +151,6 @@ class DataSerializer(serializers.Serializer):
 
             if existing_sent_message:
                 error_message = f"{type} уже был в рассылке estate: {scope['estate']['id']}"
-                scope['errors']=[{
-                    'error': error_message,
-                    'field': type,
-                    'entityId': existing_sent_message.id
-                }]
                 failed_scopes.append({
                     'scope': scope,
                     'errors': error_message,
@@ -203,7 +159,6 @@ class DataSerializer(serializers.Serializer):
             else:
                 template = Template(message_template)
                 formatted_message = template.render(**scope)
-                print(scope)
                 dispatch_dict = {
                     'name': name,
                     'message': formatted_message,
@@ -218,7 +173,9 @@ class DataSerializer(serializers.Serializer):
                 sucsessfull_scopes.append(scope)
         dispatch_objects_to_create = [Dispatch(**dispatch_dict) for dispatch_dict in dispatches_to_create]
         Dispatch.objects.bulk_create(dispatch_objects_to_create)
-        return  dispatch_objects_to_create, sucsessfull_scopes, failed_scopes
+        return  failed_scopes, sucsessfull_scopes
+
+
 class MissingValidationError(serializers.ValidationError):
     """передаем список ошибок"""
     def __init__(self, error_list):
@@ -232,7 +189,7 @@ class MissingValidationError(serializers.ValidationError):
             if "scopes" in error:
                 formatted_error["scopes"] = error["scopes"]
             formatted_errors.append(formatted_error)
-        super().__init__(detail={"errors": formatted_errors})
+        super().__init__(detail={"errors": error_list})
 
 
 
