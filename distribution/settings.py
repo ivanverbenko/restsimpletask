@@ -39,7 +39,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'firsttask',
-    'async_app',
+    'sender'
 ]
 
 MIDDLEWARE = [
@@ -131,3 +131,9 @@ DATABASES = {
         'PORT': '5432',  # Порт базы данных (обычно 5432)
     }
 }
+
+CSRF_TRUSTED_ORIGINS = ['https://your-domain.com', 'https://example.com']
+
+#REDIS
+CELERY_BROKER_URL = 'redis://localhost:6379/0'
+CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
