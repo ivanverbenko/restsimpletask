@@ -1,9 +1,10 @@
 import os
 
 from celery import Celery
-from celery import shared_task
 
 # Set the default Django settings module for the 'celery' program.
+from celery.schedules import crontab
+
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'distribution.settings')
 
 app = Celery('distribution')
@@ -18,6 +19,9 @@ app.config_from_object('django.conf:settings', namespace='CELERY')
 app.autodiscover_tasks()
 
 
-@shared_task
-def rename_widget(widget_id, name):
-    print(widget_id)
+app.conf.beat_schedule = {
+    'execute_email_dispatch_view': {
+        'task': 'sender.tasks.execute_email_dispatch_view',
+        'schedule': crontab(minute='*/2'),  # Выполнять каждую минуту
+    },
+}
