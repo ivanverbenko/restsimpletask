@@ -24,4 +24,8 @@ app.conf.beat_schedule = {
         'task': 'sender.tasks.execute_email_dispatch_view',
         'schedule': crontab(minute='*/2'),  # Выполнять каждую минуту
     },
+    'execute_phone_dispatch_view': {
+        'task': 'sender.tasks.execute_phone_dispatch_view',
+'schedule': crontab(minute='*/2'),  # Выполнять каждую минуту
+    },
 }
