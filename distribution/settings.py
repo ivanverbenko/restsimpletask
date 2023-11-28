@@ -137,3 +137,6 @@ CSRF_TRUSTED_ORIGINS = ['https://your-domain.com', 'https://example.com']
 #REDIS
 CELERY_BROKER_URL = 'redis://localhost:6379/0'
 CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
+
+#CONST
+COUNTS_OBJECTS_TO_SEND=5
