@@ -2,21 +2,55 @@ import json
 from django.db.models import Q
 from django.http import JsonResponse
 import requests
-from firsttask.models import Dispatch
+from dataHandler.models import Dispatch
 from distribution import settings
+from abc import ABC, abstractmethod
 
 
-class BaseDispatchView():
-    def __init__(self, url, fields_to_send,type):
-        self.url = url
+class BaseDispatchView(ABC):
+    """Базовый класс, от которого будет наследоваться дальнейшие рассылки на API-сервисы"""
+    def __init__(self, fields_to_send,type):
         self.fields_to_send = fields_to_send
-        self.count_objects_to_send = settings.COUNTS_OBJECTS_TO_SEND
         self.type = type
 
     def response_answer(self, message, status):
         return JsonResponse({'message': message}, status=status)
 
-    def send_data(self, data_to_send):
+    @abstractmethod
+    def send_data_to_api(self, data_to_send):
+        pass
+
+    @property
+    @abstractmethod
+    def url(self):
+        pass
+
+    def update_status(self, dispatch_objects):
+        """Обновление статуса отправки через bulk_update, так как update  не поддерживает обновление полей моделей,
+         которые были выбраны с помощью сложных запросов, таких как условия с использованием Q"""
+        for obj in dispatch_objects:
+            obj.sent = True
+        objects_to_update = list(dispatch_objects)
+        Dispatch.objects.bulk_update(objects_to_update, ['sent'])
+
+
+    def send(self):
+        dispatch_objects = Dispatch.objects.filter(Q(sent=False) & Q(type=self.type)).order_by('id') \
+            [:settings.COUNTS_OBJECTS_TO_SEND]
+        if not dispatch_objects:
+            return self.response_answer(message='No data to send', status=500)
+        data_to_send_list = list(dispatch_objects.values_list(*self.fields_to_send))
+        response = self.send_data_to_api({"data": data_to_send_list})
+        if response.status_code != 200:
+            return self.response_answer(message='Failed to send dispatch for all objects', status=500)
+        self.update_status(dispatch_objects)
+        return self.response_answer(message=data_to_send_list, status=200)
+
+class LocalhostDispatchView(BaseDispatchView):
+    @property
+    def url(self):
+        return "http://127.0.0.1:5000/echo"
+    def send_data_to_api(self, data_to_send):
         "Отправка данных на указанный URL-адрес"
         try:
             response = requests.post(self.url, json=data_to_send)
@@ -29,24 +63,5 @@ class BaseDispatchView():
         except requests.exceptions.RequestException as e:
             return self.response_answer(message=f'Error: {str(e)}', status=500)
 
-    def update_data(self, dispatch_objects):
-        "Обновление статуса отправки в базе данных"
-        for obj in dispatch_objects:
-            obj.sent = True
-        objects_to_update = list(dispatch_objects)
-        Dispatch.objects.bulk_update(objects_to_update, ['sent'])
-
-    def send(self):
-        dispatch_objects = Dispatch.objects.filter(Q(sent=False) & Q(type=self.type)).order_by('id') \
-            [:self.count_objects_to_send]
-        if dispatch_objects:
-            data_to_send_list = list(dispatch_objects.values_list(*self.fields_to_send))
-            response = self.send_data({"data": data_to_send_list})
-            if response.status_code == 200:
-                self.update_data(dispatch_objects)
-                return self.response_answer(message=data_to_send_list, status=200)
-            else:
-                return self.response_answer(message='Failed to send dispatch for all objects', status=500)
-
-
-
+    def response_answer(self, message, status):
+        return JsonResponse({'message': message}, status=status)

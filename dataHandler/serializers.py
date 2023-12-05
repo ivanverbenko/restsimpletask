@@ -4,8 +4,8 @@ from django.db.models import Q
 from jinja2 import Template
 from rest_framework import serializers
 
-from firsttask.constanValidator import ConstantValidator
-from firsttask.models import Dispatch
+from dataHandler.constanValidator import ConstantValidator
+from dataHandler.models import Dispatch
 
 
 class DataSerializer(serializers.Serializer):

@@ -38,7 +38,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
-    'firsttask',
+    'dataHandler',
     'sender'
 ]
 
@@ -139,4 +139,4 @@ CELERY_BROKER_URL = 'redis://localhost:6379/0'
 CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
 
 #CONST
-COUNTS_OBJECTS_TO_SEND=5
+COUNTS_OBJECTS_TO_SEND=3

@@ -6,8 +6,8 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from firsttask.models import Dispatch
-from firsttask.serializers import DataSerializer
+from dataHandler.models import Dispatch
+from dataHandler.serializers import DataSerializer
 
 
 class ScheduleCreateView(APIView):
